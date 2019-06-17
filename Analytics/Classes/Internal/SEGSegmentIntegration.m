@@ -1,6 +1,8 @@
 #include <sys/sysctl.h>
-
+#if TARGET_OS_IOS
 #import <UIKit/UIKit.h>
+#endif
+
 #import "SEGAnalytics.h"
 #import "SEGAnalyticsUtils.h"
 #import "SEGSegmentIntegration.h"
@@ -31,9 +33,15 @@ NSString *const kSEGTraitsFilename = @"segmentio.traits.plist";
 static NSString *GetDeviceModel()
 {
     size_t size;
-    sysctlbyname("hw.machine", NULL, &size, NULL, 0);
+#if !TARGET_OS_MAC
+    const char *name = "hw.machine";
+#else
+    const char *name = "hw.model";
+#endif
+    sysctlbyname(name, NULL, &size, NULL, 0);
     char result[size];
-    sysctlbyname("hw.machine", result, &size, NULL, 0);
+    sysctlbyname(name, result, &size, NULL, 0);
+
     NSString *results = [NSString stringWithCString:result encoding:NSUTF8StringEncoding];
     return results;
 }
@@ -55,7 +63,9 @@ static BOOL GetAdTrackingEnabled()
 @property (nonatomic, strong) NSMutableArray *queue;
 @property (nonatomic, strong) NSDictionary *cachedStaticContext;
 @property (nonatomic, strong) NSURLSessionUploadTask *batchRequest;
+#if !TARGET_OS_MAC
 @property (nonatomic, assign) UIBackgroundTaskIdentifier flushTaskID;
+#endif
 @property (nonatomic, strong) SEGReachability *reachability;
 @property (nonatomic, strong) NSTimer *flushTimer;
 @property (nonatomic, strong) dispatch_queue_t serialQueue;
@@ -89,8 +99,10 @@ static BOOL GetAdTrackingEnabled()
         self.cachedStaticContext = [self staticContext];
         self.serialQueue = seg_dispatch_queue_create_specific("io.segment.analytics.segmentio", DISPATCH_QUEUE_SERIAL);
         self.backgroundTaskQueue = seg_dispatch_queue_create_specific("io.segment.analytics.backgroundTask", DISPATCH_QUEUE_SERIAL);
+#if !TARGET_OS_MAC
         self.flushTaskID = UIBackgroundTaskInvalid;
-
+#endif
+        
 #if !TARGET_OS_TV
         // Check for previous queue/track data in NSUserDefaults and remove if present
         [self dispatchBackground:^{
@@ -152,21 +164,26 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
     [infoDictionary addEntriesFromDictionary:[[NSBundle mainBundle] localizedInfoDictionary]];
     if (infoDictionary.count) {
         dict[@"app"] = @{
-            @"name" : infoDictionary[@"CFBundleDisplayName"] ?: @"",
+#if !TARGET_OS_MAC
+          @"name" : infoDictionary[@"CFBundleDisplayName"] ?: @"",
+#else
+          @"name" : infoDictionary[@"CFBundleName"] ?: @"",
+#endif
             @"version" : infoDictionary[@"CFBundleShortVersionString"] ?: @"",
             @"build" : infoDictionary[@"CFBundleVersion"] ?: @"",
             @"namespace" : [[NSBundle mainBundle] bundleIdentifier] ?: @"",
         };
     }
-
+#if !TARGET_OS_MAC
     UIDevice *device = [UIDevice currentDevice];
 
+    
     dict[@"device"] = ({
         NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
         dict[@"manufacturer"] = @"Apple";
         dict[@"type"] = @"ios";
         dict[@"model"] = GetDeviceModel();
-        dict[@"id"] = [[device identifierForVendor] UUIDString];
+       dict[@"id"] = [[device identifierForVendor] UUIDString];
         if (NSClassFromString(SEGAdvertisingClassIdentifier)) {
             dict[@"adTrackingEnabled"] = @(GetAdTrackingEnabled());
         }
@@ -176,7 +193,7 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
         }
         dict;
     });
-
+    
     dict[@"os"] = @{
         @"name" : device.systemName,
         @"version" : device.systemVersion
@@ -187,6 +204,30 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
         @"width" : @(screenSize.width),
         @"height" : @(screenSize.height)
     };
+#else
+    dict[@"device"] = ({
+        NSMutableDictionary *dict = [[NSMutableDictionary alloc] init];
+        dict[@"manufacturer"] = @"Apple";
+        dict[@"type"] = @"macOS";
+        dict[@"model"] = GetDeviceModel();
+        if (NSClassFromString(SEGAdvertisingClassIdentifier)) {
+            dict[@"adTrackingEnabled"] = @(GetAdTrackingEnabled());
+        }
+        if (self.configuration.enableAdvertisingTracking) {
+            NSString *idfa = SEGIDFA();
+            if (idfa.length) dict[@"advertisingId"] = idfa;
+        }
+        dict;
+    });
+    NSProcessInfo *pInfo = [NSProcessInfo processInfo];
+    NSString *version = [pInfo operatingSystemVersionString];
+    
+    dict[@"os"] = @{
+                    @"name" : @"macOS",
+                    @"version" : version
+                    };
+#endif
+
 
 #if !(TARGET_IPHONE_SIMULATOR)
     Class adClient = NSClassFromString(SEGADClientClass);
@@ -267,6 +308,7 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
 
 - (void)beginBackgroundTask
 {
+#if !TARGET_OS_MAC
     [self endBackgroundTask];
 
     seg_dispatch_specific_sync(_backgroundTaskQueue, ^{
@@ -278,10 +320,12 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
                                                           }];
         }
     });
+#endif
 }
 
 - (void)endBackgroundTask
 {
+#if !TARGET_OS_MAC
     // endBackgroundTask and beginBackgroundTask can be called from main thread
     // We should not dispatch to the same queue we use to flush events because it can cause deadlock
     // inside @synchronized(self) block for SEGIntegrationsManager as both events queue and main queue
@@ -297,6 +341,7 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
             self.flushTaskID = UIBackgroundTaskInvalid;
         }
     });
+#endif
 }
 
 - (NSString *)description
@@ -561,6 +606,7 @@ static CTTelephonyNetworkInfo *_telephonyNetworkInfo;
             [self persistQueue];
             [self notifyForName:SEGSegmentRequestDidSucceedNotification userInfo:batch];
             self.batchRequest = nil;
+    
             [self endBackgroundTask];
         }];
     }];

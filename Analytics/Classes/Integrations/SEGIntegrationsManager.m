@@ -5,8 +5,12 @@
 //  Created by Tony Xiao on 9/20/16.
 //  Copyright © 2016 Segment. All rights reserved.
 //
-
+#if TARGET_OS_IOS
 #import <UIKit/UIKit.h>
+#else
+#import <Cocoa/Cocoa.h>
+#endif
+
 #import <objc/runtime.h>
 #import "SEGAnalyticsUtils.h"
 #import "SEGAnalytics.h"
@@ -89,11 +93,17 @@ static NSString *const kSEGAnonymousIdFilename = @"segment.anonymousId";
         // Attach to application state change hooks
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
 
+#if !TARGET_OS_MAC
         // Update settings on foreground
         id<SEGApplicationProtocol> application = configuration.application;
         if (application) {
             [nc addObserver:self selector:@selector(onAppForeground:) name:UIApplicationWillEnterForegroundNotification object:application];
         }
+#else
+        [nc addObserver:self selector:@selector(onAppForeground:) name:NSApplicationWillBecomeActiveNotification object:NSApp];
+
+#endif
+        
     }
     return self;
 }
@@ -117,6 +127,7 @@ static NSString *const kSEGAnonymousIdFilename = @"segment.anonymousId";
     static NSDictionary *selectorMapping;
     static dispatch_once_t selectorMappingOnce;
     dispatch_once(&selectorMappingOnce, ^{
+#if !TARGET_OS_MAC
         selectorMapping = @{
             UIApplicationDidFinishLaunchingNotification :
                 NSStringFromSelector(@selector(applicationDidFinishLaunching:)),
@@ -131,6 +142,22 @@ static NSString *const kSEGAnonymousIdFilename = @"segment.anonymousId";
             UIApplicationDidBecomeActiveNotification :
                 NSStringFromSelector(@selector(applicationDidBecomeActive))
         };
+#else
+        selectorMapping = @{
+                            NSApplicationDidFinishLaunchingNotification :
+                                NSStringFromSelector(@selector(applicationDidFinishLaunching:)),
+                            NSApplicationDidResignActiveNotification :
+                                NSStringFromSelector(@selector(applicationDidEnterBackground)),
+                            NSApplicationWillBecomeActiveNotification :
+                                NSStringFromSelector(@selector(applicationWillEnterForeground)),
+                            NSApplicationWillTerminateNotification :
+                                NSStringFromSelector(@selector(applicationWillTerminate)),
+                            NSApplicationWillResignActiveNotification :
+                                NSStringFromSelector(@selector(applicationWillResignActive)),
+                            NSApplicationDidBecomeActiveNotification :
+                                NSStringFromSelector(@selector(applicationDidBecomeActive))
+                            };
+#endif
     });
     SEL selector = NSSelectorFromString(selectorMapping[notificationName]);
     if (selector) {

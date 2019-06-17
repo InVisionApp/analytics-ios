@@ -1,11 +1,17 @@
 #import <objc/runtime.h>
+
+#if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+#import "UIViewController+SEGScreen.h"
+#else
+#import <Cocoa/Cocoa.h>
+#endif
+
 #import "SEGAnalyticsUtils.h"
 #import "SEGAnalytics.h"
 #import "SEGIntegrationFactory.h"
 #import "SEGIntegration.h"
 #import "SEGSegmentIntegrationFactory.h"
-#import "UIViewController+SEGScreen.h"
 #import "SEGStoreKitTracker.h"
 #import "SEGHTTPClient.h"
 #import "SEGStorage.h"
@@ -58,6 +64,7 @@ static SEGAnalytics *__sharedInstance = nil;
         // Attach to application state change hooks
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
 
+#if !TARGET_OS_MAC
         // Pass through for application state change events
         id<SEGApplicationProtocol> application = configuration.application;
         if (application) {
@@ -77,8 +84,20 @@ static SEGAnalytics *__sharedInstance = nil;
         if (configuration.trackInAppPurchases) {
             _storeKitTracker = [SEGStoreKitTracker trackTransactionsForAnalytics:self];
         }
+#else
+        for (NSString *name in @[ NSApplicationDidResignActiveNotification,
+                                  NSApplicationDidFinishLaunchingNotification,
+                                  NSApplicationWillBecomeActiveNotification,
+                                  NSApplicationWillTerminateNotification,
+                                  NSApplicationWillResignActiveNotification,
+                                  NSApplicationDidBecomeActiveNotification ]) {
+            [nc addObserver:self selector:@selector(handleAppStateNotification:) name:name object:NSApp];
+        }
 
-#if !TARGET_OS_TV
+#endif
+        
+        
+#if !TARGET_OS_TV && !TARGET_OS_MAC
         if (configuration.trackPushNotifications && configuration.launchOptions) {
             NSDictionary *remoteNotification = configuration.launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey];
             if (remoteNotification) {
@@ -106,12 +125,20 @@ NSString *const SEGBuildKeyV2 = @"SEGBuildKeyV2";
     SEGApplicationLifecyclePayload *payload = [[SEGApplicationLifecyclePayload alloc] init];
     payload.notificationName = note.name;
     [self run:SEGEventTypeApplicationLifecycle payload:payload];
-
+#if !TARGET_OS_MAC
     if ([note.name isEqualToString:UIApplicationDidFinishLaunchingNotification]) {
         [self _applicationDidFinishLaunchingWithOptions:note.userInfo];
     } else if ([note.name isEqualToString:UIApplicationWillEnterForegroundNotification]) {
         [self _applicationWillEnterForeground];
     }
+#else
+    if ([note.name isEqualToString:NSApplicationDidFinishLaunchingNotification]) {
+        [self _applicationDidFinishLaunchingWithOptions:note.userInfo];
+    } else if ([note.name isEqualToString:NSApplicationWillBecomeActiveNotification]) {
+        [self _applicationWillEnterForeground];
+    }
+#endif
+
 }
 
 - (void)_applicationDidFinishLaunchingWithOptions:(NSDictionary *)launchOptions
@@ -147,6 +174,7 @@ NSString *const SEGBuildKeyV2 = @"SEGBuildKeyV2";
         }];
     }
 
+#if !TARGET_OS_MAC
     [self track:@"Application Opened" properties:@{
         @"from_background" : @NO,
         @"version" : currentVersion ?: @"",
@@ -154,7 +182,7 @@ NSString *const SEGBuildKeyV2 = @"SEGBuildKeyV2";
         @"referring_application" : launchOptions[UIApplicationLaunchOptionsSourceApplicationKey] ?: @"",
         @"url" : launchOptions[UIApplicationLaunchOptionsURLKey] ?: @"",
     }];
-
+#endif
 
     [[NSUserDefaults standardUserDefaults] setObject:currentVersion forKey:SEGVersionKey];
     [[NSUserDefaults standardUserDefaults] setObject:currentBuild forKey:SEGBuildKeyV2];

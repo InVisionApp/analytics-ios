@@ -16,11 +16,14 @@ Pod::Spec.new do |s|
 
   s.ios.deployment_target = '7.0'
   s.tvos.deployment_target = '9.0'
+  s.osx.deployment_target = '10.10'
 
-  s.frameworks = 'CoreTelephony', 'Security', 'StoreKit', 'SystemConfiguration', 'UIKit'
+  s.ios.frameworks = 'CoreTelephony', 'Security', 'StoreKit', 'SystemConfiguration', 'UIKit'
 
+  s.osx.exclude_files = 'Analytics/Classes/Internal/UIViewController+SegScreen.{h,m}'
   s.source_files = [
     'Analytics/Classes/**/*',
     'Analytics/Vendor/**/*'
   ]
+
 end

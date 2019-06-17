@@ -6,9 +6,13 @@
 //  Copyright © 2016 Segment. All rights reserved.
 //
 
+#import "TargetConditionals.h"
 #import <Foundation/Foundation.h>
+#if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+#endif
 
+#if !TARGET_OS_MAC
 @protocol SEGApplicationProtocol <NSObject>
 @property (nullable, nonatomic, assign) id<UIApplicationDelegate> delegate;
 - (UIBackgroundTaskIdentifier)seg_beginBackgroundTaskWithName:(nullable NSString *)taskName expirationHandler:(void (^__nullable)(void))handler;
@@ -18,6 +22,7 @@
 
 @interface UIApplication (SEGApplicationProtocol) <SEGApplicationProtocol>
 @end
+#endif
 
 typedef NSMutableURLRequest *_Nonnull (^SEGRequestFactory)(NSURL *_Nonnull);
 
@@ -138,7 +143,9 @@ typedef NSMutableURLRequest *_Nonnull (^SEGRequestFactory)(NSURL *_Nonnull);
 /**
  * Leave this nil for iOS extensions, otherwise set to UIApplication.sharedApplication.
  */
+#if !TARGET_OS_MAC
 @property (nonatomic, strong, nullable) id<SEGApplicationProtocol> application;
+#endif
 
 /**
  * A dictionary of filters to redact payloads before they are sent.
